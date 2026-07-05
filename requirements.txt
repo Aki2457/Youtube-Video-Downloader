@@ -1,0 +1,4 @@
+yt-dlp>=2024.8.6
+rich>=13.0.0
+questionary>=2.0.0
+requests>=2.28.0

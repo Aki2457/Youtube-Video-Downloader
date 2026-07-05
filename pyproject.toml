@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yt"
+version = "1.0.0"
+description = "A fast, scriptable YouTube downloader CLI built on yt-dlp."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Aki2457" }]
+keywords = ["youtube", "downloader", "yt-dlp", "cli"]
+classifiers = [
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "yt-dlp>=2024.8.6",
+    "rich>=13.0.0",
+    "questionary>=2.0.0",
+    "requests>=2.28.0",
+]
+
+[project.scripts]
+yt = "yt.main:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools]
+packages = ["yt"]
