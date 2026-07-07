@@ -1,0 +1,7 @@
+"""Support `python -m yt`."""
+import sys
+
+from yt.main import main
+
+if __name__ == "__main__":
+    sys.exit(main())
