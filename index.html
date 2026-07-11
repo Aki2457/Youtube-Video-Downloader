@@ -1,0 +1,1641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DownTube — TUI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* ── ground ── */
+    --bg:        #0a0c10;
+    --bg-2:      #0d1117;
+    --panel:     #0c0e13;
+    --panel-alt: #10141b;
+
+    /* ── borders ── */
+    --border:    #1c2129;
+    --border-hi: #30363d;
+
+    /* ── text ── */
+    --fg:        #c9d1d9;
+    --fg-soft:   #8b949e;
+    --dim:       #6e7681;
+    --dimmer:    #484f58;
+
+    /* ── console accents ── */
+    --green:     #3bf68a;
+    --red:       #ff5f56;
+    --cyan:      #58a6ff;
+    --amber:     #febc2e;
+    --magenta:   #d2a8ff;
+
+    /* ── traffic lights ── */
+    --tl-red:    #ff5f56;
+    --tl-yellow: #febc2e;
+    --tl-green:  #27c93f;
+
+    --sel:       rgba(59,246,138,0.10);
+    --sel-line:  #3bf68a;
+
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background:
+      radial-gradient(1200px 700px at 50% -10%, #12161d 0%, var(--bg) 60%);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "liga" 1, "calt" 1;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 28px;
+    overflow: hidden;
+  }
+
+  ::selection { background: rgba(88,166,255,0.3); }
+
+  /* ══════════════ TERMINAL CONTAINER ══════════════ */
+  #term {
+    width: 100%;
+    max-width: 1000px;
+    height: 650px;
+    background: var(--bg-2);
+    border: 1px solid var(--border-hi);
+    border-radius: 10px;
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.4),
+      0 24px 70px -20px rgba(0,0,0,0.8);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: height .28s cubic-bezier(.22,1,.36,1),
+                max-width .28s cubic-bezier(.22,1,.36,1);
+  }
+  #term.minimized { height: 42px !important; }
+  #term.fullscreen {
+    max-width: 100%;
+    height: 95vh;
+  }
+  body.fullscreen { padding: 12px; }
+
+  /* ── Header / title bar ── */
+  #titlebar {
+    flex: 0 0 auto;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 14px;
+    background: linear-gradient(180deg, #12161d, #0d1117);
+    border-bottom: 1px solid var(--border);
+    user-select: none;
+  }
+  .lights { display: flex; gap: 8px; align-items: center; }
+  .light {
+    width: 13px; height: 13px; border-radius: 50%;
+    border: none; cursor: pointer; padding: 0;
+    position: relative;
+    transition: filter .15s, transform .1s;
+  }
+  .light:hover { filter: brightness(1.15); }
+  .light:active { transform: scale(.9); }
+  .light::after {
+    content: attr(data-glyph);
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 700; color: rgba(0,0,0,.55);
+    opacity: 0; transition: opacity .12s;
+  }
+  .lights:hover .light::after { opacity: 1; }
+  .light.red    { background: var(--tl-red); }
+  .light.yellow { background: var(--tl-yellow); }
+  .light.green  { background: var(--tl-green); }
+  .light:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+  .title-meta {
+    flex: 1;
+    display: flex; align-items: center; gap: 12px;
+    justify-content: center;
+    font-size: 12px; color: var(--dim);
+    letter-spacing: .3px;
+    min-width: 0;
+  }
+  .title-meta .app { color: var(--fg-soft); font-weight: 500; }
+  .title-meta .app b { color: var(--green); font-weight: 700; }
+  .title-meta .ver { color: var(--dimmer); }
+  .title-meta .sep { color: var(--border-hi); }
+  #clock { color: var(--cyan); font-variant-numeric: tabular-nums; }
+  .title-right { width: 66px; display:flex; justify-content:flex-end; }
+  .title-right .badge {
+    font-size: 10px; color: var(--dimmer);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 6px;
+  }
+  @media (max-width: 720px) {
+    .title-meta .ver, .title-right { display: none; }
+  }
+
+  /* ── Workspace ── */
+  #workspace {
+    flex: 1 1 auto;
+    position: relative;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.008), transparent 120px);
+  }
+  #screen {
+    position: absolute; inset: 0;
+    padding: 22px 26px;
+    overflow-y: auto;
+    animation: fade .22s ease;
+  }
+  @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  #screen::-webkit-scrollbar { width: 8px; }
+  #screen::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 8px; }
+  #screen::-webkit-scrollbar-track { background: transparent; }
+  #term.minimized #workspace, #term.minimized #footer { display: none; }
+
+  /* ── Footer status bar ── */
+  #footer {
+    flex: 0 0 auto;
+    height: 30px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px;
+    background: #0b0e13;
+    border-top: 1px solid var(--border);
+    font-size: 11.5px; color: var(--dim);
+    user-select: none;
+  }
+  #hints { display: flex; gap: 16px; flex-wrap: wrap; overflow: hidden; }
+  .hint { white-space: nowrap; }
+  .hint.on b { color: var(--green); }
+  .hint b { color: var(--fg-soft); font-weight: 700; }
+  .hint.on { color: var(--fg-soft); }
+  #status { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  #status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 6px var(--green); animation: pulse 2.4s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+  #status.err .dot { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  #status.busy .dot { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  #status .txt { color: var(--green); letter-spacing: 1px; }
+  #status.err .txt { color: var(--red); }
+  #status.busy .txt { color: var(--amber); }
+
+  /* ══════════════ SHARED PRIMITIVES ══════════════ */
+  .panel {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 18px 16px;
+    background: var(--panel);
+  }
+  .panel-title {
+    position: absolute; top: -9px; left: 14px;
+    background: var(--bg-2); padding: 0 4px;
+    font-size: 11px; letter-spacing: 1.5px;
+    color: var(--dim); text-transform: uppercase;
+  }
+  .panel-title .b { color: var(--border-hi); }
+  .panel-title .t { color: var(--fg-soft); }
+
+  .row-cols { display: grid; grid-template-columns: 1fr 1.15fr; gap: 20px; height: 100%; }
+  @media (max-width: 720px) { .row-cols { grid-template-columns: 1fr; } }
+
+  .scr-head { margin-bottom: 18px; }
+  .scr-head h1 {
+    font-size: 15px; font-weight: 700; color: var(--fg);
+    letter-spacing: .3px; display: flex; align-items: center; gap: 10px;
+  }
+  .scr-head h1 .pre { color: var(--green); }
+  .scr-head p { font-size: 12px; color: var(--dim); margin-top: 5px; }
+
+  /* menu / selectable list */
+  .list { display: flex; flex-direction: column; gap: 2px; }
+  .item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px; border-radius: 5px;
+    border: 1px solid transparent;
+    cursor: pointer; color: var(--fg-soft);
+    transition: background .1s, color .1s, border-color .1s;
+    position: relative;
+  }
+  .item .car { color: transparent; width: 10px; flex: 0 0 auto; }
+  .item .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .val { color: var(--cyan); font-weight: 500; flex: 0 0 auto; }
+  .item .meta { color: var(--dimmer); font-size: 11.5px; flex: 0 0 auto; }
+  .item:hover { color: var(--fg); background: rgba(255,255,255,0.02); }
+  .item.sel {
+    background: var(--sel);
+    border-color: rgba(59,246,138,0.22);
+    color: var(--fg);
+  }
+  .item.sel::before {
+    content: ""; position: absolute; left: 0; top: 4px; bottom: 4px;
+    width: 2px; background: var(--sel-line); border-radius: 2px;
+  }
+  .item.sel .car { color: var(--green); }
+  .item .idx { color: var(--dimmer); font-size: 11px; width: 20px; flex: 0 0 auto; }
+
+  .desc-body { font-size: 13px; color: var(--fg-soft); line-height: 1.7; }
+  .desc-body h3 { color: var(--green); font-size: 12px; letter-spacing: .5px;
+    text-transform: uppercase; margin-bottom: 8px; }
+  .desc-body .kv { display: flex; gap: 8px; margin: 4px 0; }
+  .desc-body .kv .k { color: var(--dim); min-width: 92px; }
+  .desc-body .kv .v { color: var(--fg); }
+  .desc-body p { margin-top: 12px; color: var(--dim); font-size: 12px; }
+  .tree { color: var(--dimmer); font-size: 12px; margin-top: 14px; white-space: pre; }
+  .tree b { color: var(--cyan); }
+
+  /* buttons row */
+  .btnrow { display: flex; gap: 12px; margin-top: 20px; }
+  .btn {
+    padding: 8px 16px; border-radius: 5px;
+    border: 1px solid var(--border-hi);
+    background: transparent; color: var(--fg-soft);
+    font-family: var(--mono); font-size: 12.5px; cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    transition: all .12s;
+  }
+  .btn .car { color: transparent; }
+  .btn:hover { border-color: var(--dim); color: var(--fg); }
+  .btn.sel { border-color: var(--green); color: var(--green); background: var(--sel); }
+  .btn.sel .car { color: var(--green); }
+  .btn.primary.sel { background: rgba(59,246,138,0.14); }
+  .btn.danger.sel { border-color: var(--red); color: var(--red); background: rgba(255,95,86,0.08); }
+  .btn.danger.sel .car { color: var(--red); }
+
+  /* logo */
+  .logo {
+    color: var(--green);
+    font-size: 11px; line-height: 1.15; white-space: pre;
+    text-shadow: 0 0 18px rgba(59,246,138,0.25);
+    margin-bottom: 4px;
+  }
+  .logo .sub { color: var(--dim); text-shadow: none; }
+
+  /* checkbox list (bulk) */
+  .chk { color: var(--dimmer); flex: 0 0 auto; width: 30px; font-weight: 700; white-space: nowrap; }
+  .item.checked .chk { color: var(--green); }
+  .item.checked .lbl { color: var(--fg); }
+
+  /* table (history) */
+  .tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .tbl th {
+    text-align: left; color: var(--dim); font-weight: 500;
+    padding: 8px 10px; border-bottom: 1px solid var(--border);
+    text-transform: uppercase; font-size: 10.5px; letter-spacing: 1px;
+  }
+  .tbl td { padding: 9px 10px; border-bottom: 1px solid rgba(28,33,41,0.6); color: var(--fg-soft); }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl .fn { color: var(--fg); }
+  .tbl .type { color: var(--magenta); }
+  .tbl .badge-ok {
+    color: var(--green); border: 1px solid rgba(59,246,138,0.3);
+    border-radius: 20px; padding: 1px 9px; font-size: 11px;
+  }
+  .tbl .date { color: var(--dimmer); font-variant-numeric: tabular-nums; }
+  .tbl-wrap { overflow-x: auto; margin-top: 6px; }
+
+  /* progress screen */
+  .prog-file { font-size: 13px; color: var(--fg); margin-bottom: 4px; }
+  .prog-file .ic { color: var(--cyan); }
+  .prog-bar-wrap { margin: 14px 0 10px; }
+  .prog-bar {
+    font-size: 16px; letter-spacing: -1px; line-height: 1;
+    white-space: pre; overflow: hidden;
+  }
+  .prog-bar .fill { color: var(--green); text-shadow: 0 0 10px rgba(59,246,138,0.4); }
+  .prog-bar .empty { color: var(--border-hi); }
+  .prog-bar .pct { color: var(--green); font-size: 13px; margin-left: 12px; letter-spacing: 0; }
+  .prog-stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    margin: 16px 0 4px;
+  }
+  .stat { border: 1px solid var(--border); border-radius: 5px; padding: 8px 11px; background: var(--panel); }
+  .stat .k { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .stat .v { font-size: 14px; color: var(--fg); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .stat .v.cyan { color: var(--cyan); }
+  .stat .v.green { color: var(--green); }
+  .stat .v.amber { color: var(--amber); }
+
+  .console {
+    margin-top: 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: #08090d; padding: 12px 14px;
+    height: 190px; overflow-y: auto;
+    font-size: 12px; line-height: 1.65;
+  }
+  .console::-webkit-scrollbar { width: 6px; }
+  .console::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 6px; }
+  .console .ln { white-space: pre-wrap; word-break: break-all; }
+  .c-cmd { color: var(--fg); } .c-cmd .p { color: var(--green); font-weight: 700; }
+  .c-tag { color: var(--cyan); } .c-dl { color: var(--fg-soft); }
+  .c-dl .n { color: var(--green); } .c-ok { color: var(--green); }
+  .c-warn { color: var(--amber); } .c-err { color: var(--red); }
+  .c-dim { color: var(--dimmer); }
+  .cursor::after { content: "▋"; color: var(--green); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .save-cta {
+    margin-top: 16px; display: flex; justify-content: center;
+  }
+  .save-btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 12px 26px; border-radius: 6px;
+    background: linear-gradient(180deg, #46ff97, #2fe07d);
+    color: #062a16; font-weight: 700; font-size: 14px;
+    border: none; cursor: pointer; text-decoration: none;
+    box-shadow: 0 0 0 1px rgba(59,246,138,0.5), 0 8px 24px -6px rgba(59,246,138,0.55);
+    animation: bounce 1.1s ease-in-out infinite;
+  }
+  .save-btn:hover { filter: brightness(1.06); }
+  @keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  @media (prefers-reduced-motion: reduce) {
+    .save-btn, #status .dot, .cursor::after { animation: none; }
+  }
+
+  /* terminated screen */
+  .terminated {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px;
+    color: var(--dim); text-align: center;
+  }
+  .terminated .big { color: var(--fg-soft); font-size: 14px; }
+  .terminated .hintline { font-size: 12px; color: var(--dimmer); margin-top: 14px; }
+  .terminated .hintline b { color: var(--green); }
+
+  .empty-state { color: var(--dimmer); font-size: 12.5px; padding: 24px 4px; text-align: center; }
+  .loader { color: var(--cyan); font-size: 12.5px; padding: 10px 2px; }
+  .loader .sp { color: var(--green); }
+  .hintbar { margin-top: 16px; font-size: 11.5px; color: var(--dimmer); }
+  .hintbar b { color: var(--fg-soft); }
+
+  .search-box {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+    border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px;
+    background: var(--panel);
+  }
+  .search-box .pr { color: var(--green); font-weight: 700; }
+  .search-box .q { color: var(--fg); flex: 1; }
+  .search-box .q.empty { color: var(--dimmer); }
+  .search-box .hint { color: var(--dimmer); font-size: 11px; }
+
+  /* ══════════════ MODAL OVERLAY ══════════════ */
+  #overlay {
+    position: absolute; inset: 0; z-index: 30;
+    background: rgba(5,6,9,0.72);
+    backdrop-filter: blur(2px);
+    display: none; align-items: center; justify-content: center;
+    animation: fade .15s ease;
+  }
+  #overlay.open { display: flex; }
+  .modal {
+    width: min(560px, 88%);
+    border: 1px solid var(--border-hi); border-radius: 8px;
+    background: var(--bg-2);
+    box-shadow: 0 20px 60px -12px rgba(0,0,0,0.7);
+    overflow: hidden;
+  }
+  .modal-head {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--dim); letter-spacing: .5px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .modal-head .t { color: var(--green); }
+  .modal-body { padding: 18px 16px 14px; }
+  .modal-body label { display:block; font-size: 11px; color: var(--dim); margin-bottom: 8px; letter-spacing:.5px; }
+  .modal-input-row { display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--border-hi); border-radius: 6px; padding: 10px 12px; background: #08090d; }
+  .modal-input-row .pr { color: var(--green); font-weight: 700; }
+  .modal input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: var(--fg); font-family: var(--mono); font-size: 14px;
+    caret-color: var(--green);
+  }
+  .modal-foot {
+    padding: 10px 16px 14px; display: flex; justify-content: space-between;
+    align-items: center; font-size: 11px; color: var(--dimmer);
+  }
+  .modal-foot .keys b { color: var(--fg-soft); }
+  .modal-foot .btns { display: flex; gap: 8px; }
+  .modal-foot button {
+    font-family: var(--mono); font-size: 12px; padding: 5px 12px;
+    border-radius: 5px; cursor: pointer; border: 1px solid var(--border-hi);
+    background: transparent; color: var(--fg-soft);
+  }
+  .modal-foot button.ok { border-color: var(--green); color: var(--green); }
+  .modal-foot button:hover { filter: brightness(1.2); }
+
+  /* toast */
+  #toast {
+    position: absolute; bottom: 42px; left: 50%; transform: translateX(-50%) translateY(20px);
+    z-index: 40; background: #0d1117; border: 1px solid var(--border-hi);
+    border-left: 2px solid var(--green);
+    border-radius: 6px; padding: 9px 16px; font-size: 12px; color: var(--fg-soft);
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+    box-shadow: 0 10px 30px -8px rgba(0,0,0,0.6);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.err { border-left-color: var(--red); }
+  #toast.info { border-left-color: var(--cyan); }
+</style>
+</head>
+<body>
+  <div id="term">
+    <!-- ══ HEADER ══ -->
+    <div id="titlebar">
+      <div class="lights">
+        <button class="light red"    data-glyph="✕" id="tl-close"    title="Close session" aria-label="Close session"></button>
+        <button class="light yellow" data-glyph="–" id="tl-minimize" title="Minimize"       aria-label="Minimize"></button>
+        <button class="light green"  data-glyph="+" id="tl-maximize" title="Fullscreen"      aria-label="Toggle fullscreen"></button>
+      </div>
+      <div class="title-meta">
+        <span class="app"><b>DownTube</b></span>
+        <span class="sep">·</span>
+        <span class="ver">v1.2.5</span>
+        <span class="sep">·</span>
+        <span id="clock">0000-00-00 00:00:00</span>
+      </div>
+      <div class="title-right"><span class="badge">TUI</span></div>
+    </div>
+
+    <!-- ══ WORKSPACE ══ -->
+    <div id="workspace">
+      <div id="screen"></div>
+
+      <!-- input overlay -->
+      <div id="overlay">
+        <div class="modal" role="dialog" aria-modal="true">
+          <div class="modal-head"><span>│</span> <span class="t" id="modal-title">INPUT</span></div>
+          <div class="modal-body">
+            <label id="modal-label">Enter value</label>
+            <div class="modal-input-row">
+              <span class="pr">❯</span>
+              <input id="modal-input" type="text" autocomplete="off" spellcheck="false" />
+            </div>
+          </div>
+          <div class="modal-foot">
+            <div class="keys"><b>Enter</b> save · <b>Esc</b> cancel · paste supported</div>
+            <div class="btns">
+              <button id="modal-cancel">Cancel</button>
+              <button id="modal-ok" class="ok">Confirm</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="toast"></div>
+    </div>
+
+    <!-- ══ FOOTER ══ -->
+    <div id="footer">
+      <div id="hints"></div>
+      <div id="status"><span class="dot"></span><span class="txt">STABLE</span></div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════
+   DownTube — a keyboard-first TUI frontend for yt-dlp
+   Single-file. State machine + renderers + real API integration.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const $  = (s, r=document) => r.querySelector(s);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const esc = (s='') => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ── constants ── */
+const QUALITIES = [
+  { label: '1080p (MP4)',  q: '1080', ext: 'mp4'  },
+  { label: '720p (MP4)',   q: '720',  ext: 'mp4'  },
+  { label: '480p (WebM)',  q: '480',  ext: 'webm' },
+  { label: '360p (3GP)',   q: '360',  ext: '3gp'  },
+];
+const FORMATS      = ['MP4', 'MKV', 'MP3', 'FLAC'];
+const FRAGMENTS    = [1, 2, 4, 8, 16];
+const RATES        = ['Unlimited', '50K', '100K', '1M', '5M', '10M'];
+const BROWSERS     = ['None', 'Chrome', 'Firefox', 'Brave', 'Safari', 'Edge'];
+
+const INVIDIOUS = [
+  'https://invidious.nerdvpn.de',
+  'https://yewtu.be',
+  'https://invidious.projectsegfau.lt',
+  'https://inv.nadeko.net',
+  'https://invidious.jing.rocks',
+];
+const COBALT_ENDPOINTS = [
+  'https://api.cobalt.tools/api/json',
+  'https://co.wuk.sh/api/json',
+];
+
+/* ── persisted config ── */
+const DEFAULT_SETTINGS = {
+  path: '~/Downloads/DownTube',
+  format: 'MP4',
+  fragments: 4,
+  rate: 'Unlimited',
+  ignoreErrors: true,
+  writeDescription: false,
+  writeInfoJson: false,
+  restrictFilenames: false,
+  cookies: 'Chrome',
+};
+const DEFAULT_HISTORY = [
+  { fn: 'Introducing Rust 2024 Edition', type: 'MP4', size: '84.2 MiB', date: '2026-07-08 14:22:10' },
+  { fn: 'lofi hip hop radio — beats to relax', type: 'MP3', size: '9.7 MiB',  date: '2026-07-07 23:05:41' },
+  { fn: 'The Linux Kernel Explained', type: 'MKV', size: '212.6 MiB', date: '2026-07-05 09:11:03' },
+  { fn: 'Building a Terminal UI in Rust', type: 'MP4', size: '58.9 MiB', date: '2026-07-02 18:44:27' },
+];
+
+function loadStore(key, fallback) {
+  try { const v = JSON.parse(localStorage.getItem('downtube.' + key)); return v ?? fallback; }
+  catch { return fallback; }
+}
+function saveStore(key, val) {
+  try { localStorage.setItem('downtube.' + key, JSON.stringify(val)); } catch {}
+}
+
+/* ── central state ── */
+const S = {
+  screen: 'launcher',
+  sel: 0,
+  fullscreen: false,
+  minimized: false,
+  terminated: false,
+
+  wizard: { url: '', quality: 0, audioOnly: false },
+
+  search: { query: '', results: [], loading: false, error: '', node: '' },
+
+  bulk: {
+    title: 'Best of Terminal Tools 2026',
+    items: [
+      { title: 'fzf — fuzzy finder deep dive',        dur: '18:42', size: '96 MiB',  selected: true  },
+      { title: 'lazygit full workflow tutorial',      dur: '24:10', size: '132 MiB', selected: true  },
+      { title: 'htop internals & customization',      dur: '11:35', size: '61 MiB',  selected: false },
+      { title: 'ripgrep vs grep — benchmark',         dur: '08:19', size: '44 MiB',  selected: false },
+      { title: 'neovim from scratch (2026)',          dur: '41:57', size: '228 MiB', selected: true  },
+      { title: 'tmux for power users',                dur: '15:03', size: '81 MiB',  selected: false },
+      { title: 'zsh + starship dotfiles tour',        dur: '13:28', size: '72 MiB',  selected: false },
+    ],
+  },
+
+  config: { path: '~/Downloads/DownTube/playlists', threads: 2, rate: 0 },
+
+  prog: {
+    filename: '', pct: 0, speed: '—', downloaded: '0 B', total: '—',
+    eta: '—', log: [], saveUrl: '', done: false, error: false, timer: null,
+  },
+
+  settings: loadStore('settings', { ...DEFAULT_SETTINGS }),
+  history:  loadStore('history',  DEFAULT_HISTORY.slice()),
+
+  modal: null, // { title, label, value, onSave }
+};
+
+/* ═══════════════ AUDIO — soft keypress chime ═══════════════ */
+let audioCtx = null;
+function beep(freq = 660, dur = 0.028, vol = 0.05) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch {}
+}
+const chime  = () => beep(620, 0.026, 0.045);
+const chime2 = () => beep(880, 0.05, 0.06);
+const chimeErr = () => { beep(200, 0.09, 0.06); };
+
+/* ═══════════════ CLOCK ═══════════════ */
+function pad(n) { return String(n).padStart(2, '0'); }
+function tickClock() {
+  const d = new Date();
+  $('#clock').textContent =
+    `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+setInterval(tickClock, 1000); tickClock();
+
+/* ═══════════════ STATUS BAR ═══════════════ */
+function setStatus(kind, text) {
+  const s = $('#status');
+  s.className = kind === 'stable' ? '' : kind;
+  s.querySelector('.txt').textContent = text;
+}
+
+/* ═══════════════ TOAST ═══════════════ */
+let toastTimer = null;
+function toast(msg, kind = '') {
+  const t = $('#toast');
+  t.className = ''; if (kind) t.classList.add(kind);
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   NAVIGATION MODEL
+   Each screen exposes: count(), render(), onEnter(i), and optionally
+   onSpace(i), onLeft(i), onRight(i), hints().
+   ═══════════════════════════════════════════════════════════════════════ */
+function go(screen, resetSel = true) {
+  S.screen = screen;
+  if (resetSel) S.sel = 0;
+  render();
+}
+function move(delta) {
+  const n = SCREENS[S.screen].count();
+  if (n <= 0) return;
+  S.sel = (S.sel + delta + n) % n;
+  chime();
+  render();
+}
+
+/* ═══════════════ COMMAND BUILDER ═══════════════ */
+function buildCommand(url, audioOnly, opts = {}) {
+  const s = S.settings;
+  const p = ['yt-dlp'];
+  const threads = opts.threads != null ? opts.threads : s.fragments;
+  const rate    = opts.rate    != null ? opts.rate    : s.rate;
+  p.push('-N', threads);
+  if (rate && rate !== 'Unlimited') p.push('-r', rate);
+  if (s.ignoreErrors) p.push('-i');
+  if (s.writeDescription) p.push('--write-description');
+  if (s.writeInfoJson) p.push('--write-info-json');
+  if (s.restrictFilenames) p.push('--restrict-filenames');
+  if (s.cookies && s.cookies !== 'None') p.push('--cookies-from-browser', s.cookies.toLowerCase());
+  if (audioOnly) {
+    p.push('-x', '--audio-format', 'mp3');
+  } else {
+    const q = QUALITIES[S.wizard.quality] || QUALITIES[0];
+    p.push('-f', `bv*[height<=${q.q}]+ba/b[height<=${q.q}]`);
+  }
+  const path = opts.path || s.path;
+  p.push('-o', `"${path}/%(title)s.%(ext)s"`);
+  p.push(`"${url}"`);
+  return p.join(' ');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SCREEN DEFINITIONS
+   ═══════════════════════════════════════════════════════════════════════ */
+const SCREENS = {};
+
+/* ── SCREEN: LAUNCHER ── */
+const LAUNCHER_MENU = [
+  { icon: '▸', label: 'Download Single Video', screen: 'download_wizard',
+    desc: { head: 'Single Video Downloader',
+      lines: [['Action', 'Fetch one video by URL'], ['Engine', 'yt-dlp + Cobalt gateway'], ['Formats', 'MP4 / WebM / MP3']],
+      body: 'Paste a YouTube URL, pick a quality preset, optionally extract audio, and start a single transfer with a live progress readout.' } },
+  { icon: '⌕', label: 'Search and Download', screen: 'search_results',
+    desc: { head: 'Search Engine',
+      lines: [['Action', 'Query then download'], ['Source', 'Invidious public API'], ['Result', 'Title · length · size']],
+      body: 'Type a query, browse real results from the Invidious network, and press Enter on any row to download it immediately.' } },
+  { icon: '≣', label: 'Download Bulk Playlist', screen: 'bulk_selector',
+    desc: { head: 'Bulk Playlist Selector',
+      lines: [['Action', 'Multi-select queue'], ['Toggle', '[Space] per item'], ['Config', 'Threads · rate · path']],
+      body: 'Review a playlist as a checklist. Toggle items with Space, then launch a batch sequence with per-run download configuration.' } },
+  { icon: '≡', label: 'Download History', screen: 'download_history',
+    desc: { head: 'Transfer History',
+      lines: [['Action', 'Review completed'], ['Store', 'Local database'], ['Fields', 'Name · type · size · date']],
+      body: 'A minimal ledger of every completed transfer, persisted locally. Clear the database at any time.' } },
+  { icon: '⚙', label: 'Settings Config', screen: 'settings',
+    desc: { head: 'Settings — yt-dlp flags',
+      lines: [['Action', 'Edit CLI defaults'], ['Maps to', 'Real yt-dlp flags'], ['Persist', 'Saved locally']],
+      body: 'Configure download path, format, concurrent fragments (-N), rate limit (-r), cookies source and more. Each row maps to a real flag.' } },
+  { icon: '⏻', label: 'Exit Session', screen: '__exit',
+    desc: { head: 'Terminate Session',
+      lines: [['Action', 'End the process'], ['Result', '[Process completed]'], ['Restart', 'Reopen with ↵']],
+      body: 'Safely terminate the active terminal session. The workspace is replaced by a static process-completed screen.' } },
+];
+SCREENS.launcher = {
+  count: () => LAUNCHER_MENU.length,
+  hints: () => [['↑↓','Navigate',1],['Enter','Select',1],['q','Quit',0]],
+  onEnter(i) {
+    const m = LAUNCHER_MENU[i]; chime2();
+    if (m.screen === '__exit') return terminateSession();
+    go(m.screen);
+  },
+  render() {
+    const wrap = el('div');
+    wrap.style.height = '100%';
+    const logo = el('div', 'logo',
+`  ██████╗  ██████╗ ██╗    ██╗███╗   ██╗████████╗██╗   ██╗██████╗ ███████╗
+  ██╔══██╗██╔═══██╗██║    ██║████╗  ██║╚══██╔══╝██║   ██║██╔══██╗██╔════╝
+  ██║  ██║██║   ██║██║ █╗ ██║██╔██╗ ██║   ██║   ██║   ██║██████╔╝█████╗
+  ██║  ██║██║   ██║██║███╗██║██║╚██╗██║   ██║   ██║   ██║██╔══██╗██╔══╝
+  ██████╔╝╚██████╔╝╚███╔███╔╝██║ ╚████║   ██║   ╚██████╔╝██████╔╝███████╗
+  ╚═════╝  ╚═════╝  ╚══╝╚══╝ ╚═╝  ╚═══╝   ╚═╝    ╚═════╝ ╚═════╝ ╚══════╝<span class="sub">   a keyboard-first frontend for yt-dlp · press ↑↓ then ↵</span>`);
+    wrap.appendChild(logo);
+
+    const cols = el('div', 'row-cols');
+    cols.style.marginTop = '18px';
+
+    // left: menu
+    const left = el('div', 'panel');
+    left.appendChild(panelTitle('MAIN MENU'));
+    const list = el('div', 'list');
+    LAUNCHER_MENU.forEach((m, i) => {
+      const it = el('div', 'item' + (i === S.sel ? ' sel' : ''));
+      it.innerHTML =
+        `<span class="car">❯</span><span class="idx">${pad(i+1)}</span>` +
+        `<span class="lbl">${esc(m.label)}</span>`;
+      it.onclick = () => { S.sel = i; SCREENS.launcher.onEnter(i); };
+      it.onmouseenter = () => { if (S.sel !== i) { S.sel = i; render(); } };
+      list.appendChild(it);
+    });
+    left.appendChild(list);
+
+    // right: description
+    const right = el('div', 'panel');
+    right.appendChild(panelTitle('INFO'));
+    const d = LAUNCHER_MENU[S.sel].desc;
+    const body = el('div', 'desc-body');
+    body.innerHTML =
+      `<h3>${esc(d.head)}</h3>` +
+      d.lines.map(([k,v]) => `<div class="kv"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join('') +
+      `<p>${esc(d.body)}</p>`;
+    right.appendChild(body);
+
+    cols.appendChild(left); cols.appendChild(right);
+    wrap.appendChild(cols);
+    return wrap;
+  },
+};
+
+/* ── SCREEN: DOWNLOAD WIZARD ── */
+SCREENS.download_wizard = {
+  // rows: 0 url, 1 quality, 2 audio, 3 start, 4 cancel
+  count: () => 5,
+  hints: () => [['↑↓','Navigate',1],['←→','Cycle',0],['Enter','Edit / Run',1],['Esc','Back',1]],
+  onLeft(i)  { if (i === 1) { cycle('wizard.quality', QUALITIES.length, -1); } },
+  onRight(i) { if (i === 1) { cycle('wizard.quality', QUALITIES.length,  1); } },
+  onEnter(i) {
+    if (i === 0) {
+      openModal({ title: 'VIDEO URL', label: 'Paste the YouTube video URL',
+        value: S.wizard.url, placeholder: 'https://www.youtube.com/watch?v=…',
+        onSave: v => { S.wizard.url = v.trim(); render(); } });
+    } else if (i === 1) { cycle('wizard.quality', QUALITIES.length, 1); }
+    else if (i === 2) { S.wizard.audioOnly = !S.wizard.audioOnly; chime(); render(); }
+    else if (i === 3) { startSingleDownload(); }
+    else if (i === 4) { chime(); go('launcher'); }
+  },
+  render() {
+    const wrap = el('div');
+    wrap.appendChild(scrHead('❯', 'Single Video Downloader', 'Configure a one-shot transfer, then start.'));
+
+    const p = el('div', 'panel'); p.appendChild(panelTitle('PARAMETERS'));
+    const list = el('div', 'list');
+    const q = QUALITIES[S.wizard.quality];
+    const rows = [
+      { lbl: 'Video URL', val: S.wizard.url || '— not set —', valCls: S.wizard.url ? '' : 'muted' },
+      { lbl: 'Quality Format', val: `‹ ${q.label} ›` },
+      { lbl: 'Audio Only', val: S.wizard.audioOnly ? 'Yes (MP3)' : 'No (Video)',
+        valCls: S.wizard.audioOnly ? 'ok' : '' },
+    ];
+    rows.forEach((r, i) => {
+      const it = el('div', 'item' + (i === S.sel ? ' sel' : ''));
+      const valColor = r.valCls === 'muted' ? 'style="color:var(--dimmer)"'
+                     : r.valCls === 'ok' ? 'style="color:var(--green)"' : '';
+      it.innerHTML =
+        `<span class="car">❯</span>` +
+        `<span class="lbl">${esc(r.lbl)}</span>` +
+        `<span class="val" ${valColor}>${esc(r.val)}</span>`;
+      it.onclick = () => { S.sel = i; SCREENS.download_wizard.onEnter(i); };
+      it.onmouseenter = () => { if (S.sel !== i) { S.sel = i; render(); } };
+      list.appendChild(it);
+    });
+    p.appendChild(list);
+    wrap.appendChild(p);
+
+    // buttons
+    const br = el('div', 'btnrow');
+    br.appendChild(mkBtn('▶ Start Download', 3, 'primary'));
+    br.appendChild(mkBtn('✕ Cancel', 4, 'danger'));
+    wrap.appendChild(br);
+
+    // preview command
+    if (S.wizard.url) {
+      const prev = el('div');
+      prev.style.cssText = 'margin-top:18px;font-size:11.5px;color:var(--dimmer);white-space:pre-wrap;word-break:break-all;';
+      prev.innerHTML = `<span style="color:var(--dim)">preview ❯</span> ` +
+        `<span style="color:var(--fg-soft)">${esc(buildCommand(S.wizard.url, S.wizard.audioOnly))}</span>`;
+      wrap.appendChild(prev);
+    }
+    return wrap;
+  },
+};
+
+/* ── SCREEN: SEARCH RESULTS ── */
+SCREENS.search_results = {
+  count: () => S.search.results.length,
+  hints: () => [['↑↓','Navigate',1],['Enter','Download',1],['/', 'New search',0],['Esc','Back',1]],
+  onEnter(i) {
+    if (S.search.loading) return;
+    if (S.search.results.length === 0) { promptSearch(); return; }
+    const r = S.search.results[i];
+    if (!r) return;
+    chime2();
+    S.wizard.url = r.url; S.wizard.audioOnly = false;
+    startSingleDownload(r.title);
+  },
+  render() {
+    const wrap = el('div');
+    wrap.appendChild(scrHead('⌕', 'Search & Download', 'Live results from the Invidious network.'));
+
+    // search bar
+    const sb = el('div', 'search-box');
+    sb.innerHTML =
+      `<span class="pr">❯</span>` +
+      `<span class="q ${S.search.query ? '' : 'empty'}">${esc(S.search.query || 'press / or Enter to type a query…')}</span>` +
+      `<span class="hint">[/] edit</span>`;
+    sb.onclick = () => promptSearch();
+    wrap.appendChild(sb);
+
+    if (S.search.loading) {
+      wrap.appendChild(spinner('querying invidious nodes…'));
+      return wrap;
+    }
+    if (S.search.error) {
+      const e = el('div', 'empty-state');
+      e.innerHTML = `<span style="color:var(--red)">${esc(S.search.error)}</span>`;
+      wrap.appendChild(e);
+      return wrap;
+    }
+    if (S.search.results.length === 0) {
+      wrap.appendChild(el('div', 'empty-state',
+        'No results yet. Press <b style="color:var(--fg-soft)">/</b> or <b style="color:var(--fg-soft)">Enter</b> to run a search.'));
+      return wrap;
+    }
+
+    if (S.search.node) {
+      const src = el('div');
+      src.style.cssText = 'font-size:11px;color:var(--dimmer);margin-bottom:8px;';
+      src.innerHTML = `source ❯ <span style="color:var(--cyan)">${esc(S.search.node)}</span> · ${S.search.results.length} results`;
+      wrap.appendChild(src);
+    }
+
+    const list = el('div', 'list');
+    S.search.results.forEach((r, i) => {
+      const it = el('div', 'item' + (i === S.sel ? ' sel' : ''));
+      it.innerHTML =
+        `<span class="car">❯</span>` +
+        `<span class="lbl">${esc(r.title)}</span>` +
+        `<span class="meta" style="white-space:nowrap">${esc(r.dur)}</span>` +
+        `<span class="meta" style="color:var(--cyan);width:96px;text-align:right;white-space:nowrap">${esc(r.size)}</span>`;
+      it.onclick = () => { S.sel = i; SCREENS.search_results.onEnter(i); };
+      it.onmouseenter = () => { if (S.sel !== i) { S.sel = i; render(); } };
+      list.appendChild(it);
+    });
+    wrap.appendChild(list);
+    wrap.appendChild(el('div', 'hintbar', 'Select a row and press <b>Enter</b> to download it immediately.'));
+    return wrap;
+  },
+};
+
+/* ── SCREEN: BULK SELECTOR ── */
+SCREENS.bulk_selector = {
+  count: () => S.bulk.items.length,
+  hints: () => [['↑↓','Navigate',1],['Space','Select',1],['Enter','Download',1],['c','Configure',0],['Esc','Back',1]],
+  onSpace(i) {
+    const it = S.bulk.items[i]; if (!it) return;
+    it.selected = !it.selected; chime(); render();
+  },
+  onEnter(i) {
+    const chosen = S.bulk.items.filter(x => x.selected);
+    if (chosen.length === 0) { toast('No items selected — press Space to select', 'err'); chimeErr(); return; }
+    chime2();
+    startBulkDownload();
+  },
+  render() {
+    const wrap = el('div');
+    const n = S.bulk.items.filter(x => x.selected).length;
+    wrap.appendChild(scrHead('≣', 'Bulk Playlist Selector',
+      `${esc(S.bulk.title)} · ${S.bulk.items.length} items · ${n} selected`));
+
+    const p = el('div', 'panel'); p.appendChild(panelTitle('PLAYLIST'));
+    // header
+    const hd = el('div');
+    hd.style.cssText = 'display:flex;gap:10px;padding:2px 10px 8px;font-size:10.5px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--border);margin-bottom:6px;';
+    hd.innerHTML = `<span style="width:24px">◇</span><span style="flex:1">Title</span><span style="width:60px">Length</span><span style="width:74px;text-align:right">Size</span>`;
+    p.appendChild(hd);
+
+    const list = el('div', 'list');
+    S.bulk.items.forEach((r, i) => {
+      const it = el('div', 'item' + (i === S.sel ? ' sel' : '') + (r.selected ? ' checked' : ''));
+      it.innerHTML =
+        `<span class="chk">${r.selected ? '[x]' : '[ ]'}</span>` +
+        `<span class="lbl">${esc(r.title)}</span>` +
+        `<span class="meta" style="width:60px">${esc(r.dur)}</span>` +
+        `<span class="meta" style="width:74px;text-align:right;color:var(--cyan)">${esc(r.size)}</span>`;
+      it.onclick = () => { S.sel = i; SCREENS.bulk_selector.onSpace(i); };
+      it.onmouseenter = () => { if (S.sel !== i) { S.sel = i; render(); } };
+      list.appendChild(it);
+    });
+    p.appendChild(list);
+    wrap.appendChild(p);
+
+    const br = el('div', 'btnrow');
+    const cfg = el('button', 'btn');
+    cfg.innerHTML = `<span class="car">❯</span>⚙ Configure ‹c›`;
+    cfg.onclick = () => go('download_config');
+    br.appendChild(cfg);
+    wrap.appendChild(br);
+
+    wrap.appendChild(el('div', 'hintbar',
+      '<b>[Space]</b> toggle item · <b>[Enter]</b> launch batch for all selected · <b>[c]</b> download config · <b>[Esc]</b> back'));
+    return wrap;
+  },
+};
+
+/* ── SCREEN: DOWNLOAD CONFIG (bulk settings) ── */
+SCREENS.download_config = {
+  // 0 path, 1 threads, 2 rate, 3 start batch, 4 back
+  count: () => 5,
+  hints: () => [['↑↓','Navigate',1],['←→','Cycle',0],['Enter','Edit / Run',1],['Esc','Back',1]],
+  onLeft(i)  { if (i===1) cycle('config.threads', FRAGMENTS.length, -1, true); if (i===2) cycle('config.rate', RATES.length, -1); },
+  onRight(i) { if (i===1) cycle('config.threads', FRAGMENTS.length,  1, true); if (i===2) cycle('config.rate', RATES.length,  1); },
+  onEnter(i) {
+    if (i === 0) {
+      openModal({ title: 'SAVE FOLDER', label: 'Destination directory for the batch',
+        value: S.config.path, placeholder: '~/Downloads/DownTube/playlists',
+        onSave: v => { S.config.path = v.trim() || S.config.path; render(); } });
+    } else if (i === 1) { cycle('config.threads', FRAGMENTS.length, 1, true); }
+    else if (i === 2) { cycle('config.rate', RATES.length, 1); }
+    else if (i === 3) { startBulkDownload(); }
+    else if (i === 4) { chime(); go('bulk_selector'); }
+  },
+  render() {
+    const wrap = el('div');
+    wrap.appendChild(scrHead('⚙', 'Advanced Download Configuration',
+      'Batch parameters for the selected playlist items.'));
+    const p = el('div', 'panel'); p.appendChild(panelTitle('BULK SETTINGS'));
+    const list = el('div', 'list');
+    const rows = [
+      { lbl: 'Save folder path', val: S.config.path },
+      { lbl: 'Concurrent threads (-N)', val: `‹ ${FRAGMENTS[S.config.threads]} ›` },
+      { lbl: 'Speed limit (-r)', val: `‹ ${RATES[S.config.rate]} ›` },
+    ];
+    rows.forEach((r, i) => {
+      const it = el('div', 'item' + (i === S.sel ? ' sel' : ''));
+      it.innerHTML = `<span class="car">❯</span><span class="lbl">${esc(r.lbl)}</span><span class="val">${esc(r.val)}</span>`;
+      it.onclick = () => { S.sel = i; SCREENS.download_config.onEnter(i); };
+      it.onmouseenter = () => { if (S.sel !== i) { S.sel = i; render(); } };
+      list.appendChild(it);
+    });
+    p.appendChild(list);
+    wrap.appendChild(p);
+
+    const br = el('div', 'btnrow');
+    br.appendChild(mkBtn('▶ Start Batch', 3, 'primary'));
+    br.appendChild(mkBtn('← Back', 4, ''));
+    wrap.appendChild(br);
+
+    const sel = S.bulk.items.filter(x => x.selected).length;
+    wrap.appendChild(el('div', 'hintbar',
+      `Batch of <b>${sel}</b> item(s) · <b>-N ${FRAGMENTS[S.config.threads]}</b> · rate <b>${esc(RATES[S.config.rate])}</b>`));
+    return wrap;
+  },
+};
+
+/* ── SCREEN: PROGRESS ── */
+SCREENS.progress = {
+  count: () => 0,
+  hints: () => S.prog.done
+    ? [['Enter','Save / Continue',1],['h','History',0],['Esc','Back',1]]
+    : [['','downloading…',0],['Esc','Cancel',1]],
+  onEnter() { if (S.prog.done && S.prog.saveUrl) triggerSave(); },
+  render() {
+    const wrap = el('div');
+    const st = S.prog.error ? 'FAILED' : S.prog.done ? 'COMPLETE' : 'DOWNLOADING';
+    wrap.appendChild(scrHead('⇩', 'Transfer — ' + st,
+      S.prog.error ? 'The transfer could not be completed.' :
+      S.prog.done ? 'Transfer finished. Save the resolved media file below.' :
+      'Live transfer in progress…'));
+
+    // filename
+    const f = el('div', 'prog-file');
+    f.innerHTML = `<span class="ic">◈</span> ${esc(S.prog.filename || 'resolving…')}`;
+    wrap.appendChild(f);
+
+    // ASCII bar
+    const total = 34;
+    const filled = Math.round((S.prog.pct/100) * total);
+    const bar = el('div', 'prog-bar-wrap');
+    bar.innerHTML =
+      `<div class="prog-bar">[<span class="fill">${'█'.repeat(filled)}</span>` +
+      `<span class="empty">${'░'.repeat(total-filled)}</span>]` +
+      `<span class="pct">${S.prog.pct.toFixed(1)}%</span></div>`;
+    wrap.appendChild(bar);
+
+    // stats
+    const stats = el('div', 'prog-stats');
+    stats.innerHTML =
+      stat('Speed', S.prog.speed, 'cyan') +
+      stat('Downloaded', S.prog.downloaded, 'green') +
+      stat('Total Size', S.prog.total, '') +
+      stat('ETA', S.prog.eta, 'amber');
+    wrap.appendChild(stats);
+
+    // console
+    const con = el('div', 'console'); con.id = 'console';
+    con.innerHTML = S.prog.log.map(l => `<div class="ln ${l.cls}">${l.html}</div>`).join('') +
+      (S.prog.done || S.prog.error ? '' : '<div class="ln cursor"></div>');
+    wrap.appendChild(con);
+
+    // save CTA
+    if (S.prog.done && S.prog.saveUrl) {
+      const cta = el('div', 'save-cta');
+      const a = el('a', 'save-btn');
+      a.href = S.prog.saveUrl; a.setAttribute('download', '');
+      a.target = '_blank'; a.rel = 'noopener';
+      a.innerHTML = '📥 SAVE MEDIA FILE NOW';
+      a.onclick = () => { chime2(); toast('Opening native save dialog…', 'info'); };
+      cta.appendChild(a);
+      wrap.appendChild(cta);
+    } else if (S.prog.done && !S.prog.error) {
+      wrap.appendChild(el('div', 'hintbar',
+        'Media resolved on the server. In a real yt-dlp run the file is written to <b>' + esc(S.settings.path) + '</b>.'));
+    }
+
+    setTimeout(() => { const c = $('#console'); if (c) c.scrollTop = c.scrollHeight; }, 0);
+    return wrap;
+  },
+};
+
+/* ── SCREEN: HISTORY ── */
+SCREENS.download_history = {
+  // rows = history rows + 2 action buttons at the end
+  count: () => S.history.length + 2,
+  hints: () => [['↑↓','Navigate',1],['Enter','Action',1],['Esc','Back',1]],
+  onEnter(i) {
+    const n = S.history.length;
+    if (i === n) { // clear
+      S.history = []; saveStore('history', S.history);
+      toast('Database logs cleared', 'info'); chime2(); render();
+    } else if (i === n + 1) { chime(); go('launcher'); }
+  },
+  render() {
+    const wrap = el('div');
+    wrap.appendChild(scrHead('≡', 'Download History',
+      `${S.history.length} completed transfer(s) · local database`));
+
+    if (S.history.length === 0) {
+      wrap.appendChild(el('div', 'empty-state', 'No transfers recorded yet.'));
+    } else {
+      const w = el('div', 'tbl-wrap');
+      let rows = S.history.map((h, i) => {
+        const selCls = i === S.sel ? 'style="background:var(--sel)"' : '';
+        return `<tr ${selCls} data-i="${i}">
+          <td class="fn">${esc(h.fn)}</td>
+          <td class="type">${esc(h.type)}</td>
+          <td>${esc(h.size)}</td>
+          <td><span class="badge-ok">✓ ok</span></td>
+          <td class="date">${esc(h.date)}</td></tr>`;
+      }).join('');
+      w.innerHTML = `<table class="tbl"><thead><tr>
+        <th>Filename</th><th>Type</th><th>Size</th><th>Status</th><th>Date</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+      w.querySelectorAll('tr[data-i]').forEach(tr => {
+        const i = +tr.dataset.i;
+        tr.style.cursor = 'pointer';
+        tr.onmouseenter = () => { if (S.sel !== i) { S.sel = i; render(); } };
+      });
+      wrap.appendChild(w);
+    }
+
+    const br = el('div', 'btnrow');
+    br.appendChild(mkBtn('🗑 Clear Database Logs', S.history.length, 'danger'));
+    br.appendChild(mkBtn('← Back', S.history.length + 1, ''));
+    wrap.appendChild(br);
+    return wrap;
+  },
+};
+
+/* ── SCREEN: SETTINGS ── */
+const SETTING_ROWS = [
+  { key: 'path',            lbl: 'Download path',            flag: '-o',                    kind: 'text' },
+  { key: 'format',          lbl: 'Default media format',     flag: '--merge-output-format', kind: 'cycle', opts: FORMATS },
+  { key: 'fragments',       lbl: 'Concurrent fragments',     flag: '-N',                    kind: 'cycleNum', opts: FRAGMENTS },
+  { key: 'rate',            lbl: 'Limit download rate',      flag: '-r',                    kind: 'cycle', opts: RATES },
+  { key: 'ignoreErrors',    lbl: 'Ignore transfer errors',   flag: '-i',                    kind: 'toggle' },
+  { key: 'writeDescription',lbl: 'Write video description',  flag: '--write-description',   kind: 'toggle' },
+  { key: 'writeInfoJson',   lbl: 'Write metadata info-json', flag: '--write-info-json',     kind: 'toggle' },
+  { key: 'restrictFilenames',lbl:'Restrict filename chars',  flag: '--restrict-filenames',  kind: 'toggle' },
+  { key: 'cookies',         lbl: 'Cookies from browser',     flag: '--cookies-from-browser',kind: 'cycle', opts: BROWSERS },
+];
+SCREENS.settings = {
+  count: () => SETTING_ROWS.length + 1, // +reset
+  hints: () => [['↑↓','Navigate',1],['←→','Change',0],['Enter','Edit / Toggle',1],['Esc','Back',1]],
+  onLeft(i)  { changeSetting(i, -1); },
+  onRight(i) { changeSetting(i,  1); },
+  onEnter(i) {
+    if (i === SETTING_ROWS.length) { // reset
+      S.settings = { ...DEFAULT_SETTINGS }; saveStore('settings', S.settings);
+      toast('Settings reset to defaults', 'info'); chime2(); render(); return;
+    }
+    const row = SETTING_ROWS[i];
+    if (row.kind === 'text') {
+      openModal({ title: row.lbl.toUpperCase(), label: 'Value for ' + row.flag,
+        value: S.settings[row.key], placeholder: DEFAULT_SETTINGS[row.key],
+        onSave: v => { S.settings[row.key] = v.trim() || S.settings[row.key]; saveStore('settings', S.settings); render(); } });
+    } else if (row.kind === 'toggle') {
+      S.settings[row.key] = !S.settings[row.key]; saveStore('settings', S.settings); chime(); render();
+    } else { changeSetting(i, 1); }
+  },
+  render() {
+    const wrap = el('div');
+    wrap.appendChild(scrHead('⚙', 'Settings Config',
+      'Each row maps to a real yt-dlp command-line flag. Changes persist locally.'));
+
+    const p = el('div', 'panel'); p.appendChild(panelTitle('yt-dlp FLAGS'));
+    const list = el('div', 'list');
+    SETTING_ROWS.forEach((row, i) => {
+      const it = el('div', 'item' + (i === S.sel ? ' sel' : ''));
+      let val, cls = 'val';
+      if (row.kind === 'toggle') {
+        const on = S.settings[row.key];
+        val = on ? 'Yes' : 'No';
+        it.innerHTML =
+          `<span class="car">❯</span>` +
+          `<span class="lbl">${esc(row.lbl)}</span>` +
+          `<span class="meta" style="color:var(--dimmer);width:180px">${esc(row.flag)}</span>` +
+          `<span class="val" style="color:${on?'var(--green)':'var(--dimmer)'};width:60px;text-align:right">${on?'● Yes':'○ No'}</span>`;
+      } else {
+        val = row.kind === 'text' ? S.settings[row.key] : `‹ ${S.settings[row.key]} ›`;
+        it.innerHTML =
+          `<span class="car">❯</span>` +
+          `<span class="lbl">${esc(row.lbl)}</span>` +
+          `<span class="meta" style="color:var(--dimmer);width:180px">${esc(row.flag)}</span>` +
+          `<span class="val" style="width:auto;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right">${esc(val)}</span>`;
+      }
+      it.onclick = () => { S.sel = i; SCREENS.settings.onEnter(i); };
+      it.onmouseenter = () => { if (S.sel !== i) { S.sel = i; render(); } };
+      list.appendChild(it);
+    });
+    p.appendChild(list);
+    wrap.appendChild(p);
+
+    const br = el('div', 'btnrow');
+    br.appendChild(mkBtn('↺ Reset to defaults', SETTING_ROWS.length, 'danger'));
+    wrap.appendChild(br);
+    return wrap;
+  },
+};
+
+/* ── SCREEN: TERMINATED ── */
+SCREENS.terminated = {
+  count: () => 0,
+  hints: () => [['Enter','Restart session',1]],
+  onEnter() { restartSession(); },
+  render() {
+    const wrap = el('div', 'terminated');
+    wrap.innerHTML =
+      `<div style="color:var(--dimmer);font-size:12px;">login: downtube · tty1</div>` +
+      `<div class="big">[Process completed]</div>` +
+      `<div class="hintline">press <b>Enter</b> or the <span style="color:var(--tl-red)">●</span> button to start a new session</div>`;
+    return wrap;
+  },
+};
+
+/* ═══════════════ SMALL RENDER HELPERS ═══════════════ */
+function panelTitle(t) {
+  const e = el('div', 'panel-title');
+  e.innerHTML = `<span class="b">┤</span> <span class="t">${esc(t)}</span> <span class="b">├</span>`;
+  return e;
+}
+function scrHead(pre, title, sub) {
+  const h = el('div', 'scr-head');
+  h.innerHTML = `<h1><span class="pre">${pre}</span> ${esc(title)}</h1><p>${sub}</p>`;
+  return h;
+}
+function mkBtn(label, idx, variant) {
+  const b = el('button', 'btn ' + (variant||'') + (S.sel === idx ? ' sel' : ''));
+  b.innerHTML = `<span class="car">❯</span>${esc(label)}`;
+  b.onclick = () => { S.sel = idx; SCREENS[S.screen].onEnter(idx); };
+  b.onmouseenter = () => { if (S.sel !== idx) { S.sel = idx; render(); } };
+  return b;
+}
+function stat(k, v, cls) {
+  return `<div class="stat"><div class="k">${esc(k)}</div><div class="v ${cls}">${esc(v)}</div></div>`;
+}
+function spinner(text) {
+  const d = el('div', 'loader');
+  d.innerHTML = `<span class="sp">◐</span> ${esc(text)}`;
+  let i = 0; const frames = ['◐','◓','◑','◒'];
+  const iv = setInterval(() => {
+    const sp = d.querySelector('.sp');
+    if (!sp || !document.body.contains(d)) { clearInterval(iv); return; }
+    sp.textContent = frames[i++ % frames.length];
+  }, 120);
+  return d;
+}
+function cycle(path, len, dir, isFragments) {
+  const parts = path.split('.'); let obj = S;
+  for (let i=0;i<parts.length-1;i++) obj = obj[parts[i]];
+  const k = parts[parts.length-1];
+  obj[k] = (obj[k] + dir + len) % len;
+  chime(); render();
+}
+function changeSetting(i, dir) {
+  const row = SETTING_ROWS[i];
+  if (!row) return;
+  if (row.kind === 'toggle') { S.settings[row.key] = !S.settings[row.key]; }
+  else if (row.kind === 'cycle') {
+    const idx = row.opts.indexOf(S.settings[row.key]);
+    S.settings[row.key] = row.opts[(idx + dir + row.opts.length) % row.opts.length];
+  } else if (row.kind === 'cycleNum') {
+    const idx = row.opts.indexOf(S.settings[row.key]);
+    S.settings[row.key] = row.opts[(idx + dir + row.opts.length) % row.opts.length];
+  } else return;
+  saveStore('settings', S.settings); chime(); render();
+}
+
+/* ═══════════════ MASTER RENDER ═══════════════ */
+function render() {
+  const scr = $('#screen');
+  scr.innerHTML = '';
+  const def = SCREENS[S.screen];
+  scr.appendChild(def.render());
+  renderHints(def.hints ? def.hints() : []);
+}
+function renderHints(hints) {
+  const h = $('#hints'); h.innerHTML = '';
+  hints.forEach(([key, label, on]) => {
+    const s = el('span', 'hint' + (on ? ' on' : ''));
+    s.innerHTML = key ? `<b>[${esc(key)}]</b> ${esc(label)}` : esc(label);
+    h.appendChild(s);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MODAL OVERLAY
+   ═══════════════════════════════════════════════════════════════════════ */
+function openModal({ title, label, value, placeholder, onSave }) {
+  S.modal = { onSave };
+  $('#modal-title').textContent = title;
+  $('#modal-label').textContent = label;
+  const inp = $('#modal-input');
+  inp.value = value || '';
+  inp.placeholder = placeholder || '';
+  $('#overlay').classList.add('open');
+  setTimeout(() => { inp.focus(); inp.select(); }, 20);
+}
+function closeModal(save) {
+  if (!S.modal) return;
+  const cb = S.modal.onSave;
+  const val = $('#modal-input').value;
+  $('#overlay').classList.remove('open');
+  S.modal = null;
+  if (save && cb) { chime2(); cb(val); }
+}
+$('#modal-ok').onclick     = () => closeModal(true);
+$('#modal-cancel').onclick = () => closeModal(false);
+$('#modal-input').addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') { e.preventDefault(); closeModal(true); }
+  else if (e.key === 'Escape') { e.preventDefault(); closeModal(false); }
+});
+$('#overlay').addEventListener('mousedown', e => { if (e.target.id === 'overlay') closeModal(false); });
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SEARCH — Invidious integration
+   ═══════════════════════════════════════════════════════════════════════ */
+function promptSearch() {
+  openModal({ title: 'SEARCH QUERY', label: 'What do you want to find on YouTube?',
+    value: S.search.query, placeholder: 'e.g. rust programming tutorial',
+    onSave: v => { const q = v.trim(); if (q) runSearch(q); } });
+}
+function humanSize(bytes) {
+  if (!bytes || bytes <= 0) return '≈ —';
+  const u = ['B','KiB','MiB','GiB']; let i = 0, n = bytes;
+  while (n >= 1024 && i < u.length-1) { n /= 1024; i++; }
+  return '≈ ' + n.toFixed(1) + ' ' + u[i];
+}
+function fmtDur(sec) {
+  if (!sec || sec <= 0) return '—:—';
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+async function runSearch(query) {
+  S.search.query = query; S.search.loading = true; S.search.error = '';
+  S.search.results = []; S.search.node = ''; S.sel = 0;
+  go('search_results', false); setStatus('busy', 'SEARCHING');
+
+  let found = false;
+  for (const node of INVIDIOUS) {
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 6500);
+      const res = await fetch(`${node}/api/v1/search?q=${encodeURIComponent(query)}&type=video&region=US`,
+        { signal: ctrl.signal, headers: { 'Accept': 'application/json' } });
+      clearTimeout(to);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (!Array.isArray(data)) continue;
+      const vids = data.filter(x => x.type === 'video' && x.videoId).slice(0, 12);
+      if (vids.length === 0) continue;
+      S.search.results = vids.map(v => {
+        // estimate size from length @ ~1.4 Mbps average for 720p
+        const est = v.lengthSeconds ? (v.lengthSeconds * 1.4 * 1024 * 1024 / 8) : 0;
+        return {
+          title: v.title || 'untitled',
+          dur: fmtDur(v.lengthSeconds),
+          size: humanSize(est),
+          url: `https://www.youtube.com/watch?v=${v.videoId}`,
+          videoId: v.videoId,
+        };
+      });
+      S.search.node = node.replace('https://', '');
+      found = true; break;
+    } catch (e) { /* try next node */ }
+  }
+
+  S.search.loading = false;
+  if (!found) {
+    // graceful fallback so the UI stays functional when public nodes/CORS fail
+    S.search.error = '';
+    S.search.node = 'offline demo (public nodes unreachable)';
+    S.search.results = demoResults(query);
+    toast('Public Invidious nodes unreachable — showing demo results', 'err');
+    setStatus('err', 'DEGRADED');
+  } else {
+    setStatus('stable', 'STABLE');
+  }
+  S.sel = 0; render();
+}
+function demoResults(q) {
+  const base = q.slice(0, 40);
+  const durs = [212, 745, 128, 1830, 96, 388];
+  return durs.map((d, i) => ({
+    title: `${base} — result ${i+1}`,
+    dur: fmtDur(d),
+    size: humanSize(d * 1.4 * 1024 * 1024 / 8),
+    url: `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
+    videoId: '',
+  }));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DOWNLOAD ENGINE — Cobalt integration + progress simulation fallback
+   ═══════════════════════════════════════════════════════════════════════ */
+function logLine(cls, html) { S.prog.log.push({ cls, html }); }
+
+function resetProg(filename) {
+  if (S.prog.timer) { clearInterval(S.prog.timer); S.prog.timer = null; }
+  S.prog = { filename, pct: 0, speed: '0 B/s', downloaded: '0 B',
+    total: '—', eta: '—', log: [], saveUrl: '', done: false, error: false, timer: null };
+}
+
+function startSingleDownload(overrideTitle) {
+  if (!S.wizard.url) {
+    openModal({ title: 'VIDEO URL', label: 'A URL is required to start a download',
+      value: '', placeholder: 'https://www.youtube.com/watch?v=…',
+      onSave: v => { S.wizard.url = v.trim(); if (S.wizard.url) startSingleDownload(overrideTitle); } });
+    return;
+  }
+  const q = QUALITIES[S.wizard.quality];
+  const name = overrideTitle || 'video';
+  const ext = S.wizard.audioOnly ? 'mp3' : q.ext;
+  resetProg(`${name}.${ext}`);
+  go('progress');
+  setStatus('busy', 'DOWNLOADING');
+
+  const cmd = buildCommand(S.wizard.url, S.wizard.audioOnly);
+  logLine('c-cmd', `<span class="p">$</span> ${esc(cmd)}`);
+  logLine('c-tag', `[youtube] Extracting URL: ${esc(S.wizard.url)}`);
+  render();
+
+  runCobalt(S.wizard.url, S.wizard.audioOnly, q.q, `${name}.${ext}`);
+}
+
+function startBulkDownload() {
+  const chosen = S.bulk.items.filter(x => x.selected);
+  if (chosen.length === 0) { toast('Nothing selected', 'err'); return; }
+  resetProg(`${chosen.length} items → ${S.config.path}`);
+  go('progress');
+  setStatus('busy', 'DOWNLOADING');
+  const cmd = 'yt-dlp -N ' + FRAGMENTS[S.config.threads] +
+    (RATES[S.config.rate] !== 'Unlimited' ? ' -r ' + RATES[S.config.rate] : '') +
+    (S.settings.ignoreErrors ? ' -i' : '') +
+    (S.settings.cookies !== 'None' ? ' --cookies-from-browser ' + S.settings.cookies.toLowerCase() : '') +
+    ` -o "${S.config.path}/%(playlist_index)s-%(title)s.%(ext)s"` +
+    ` --yes-playlist "https://www.youtube.com/playlist?list=…"`;
+  logLine('c-cmd', `<span class="p">$</span> ${esc(cmd)}`);
+  logLine('c-tag', `[youtube:tab] Downloading playlist metadata (${chosen.length} of ${S.bulk.items.length} selected)`);
+  chosen.forEach((it, i) => logLine('c-dim', `  ${pad(i+1)}. ${esc(it.title)}  [${esc(it.dur)}]`));
+  render();
+  simulateProgress({ bulk: true, count: chosen.length, name: chosen[0].title });
+}
+
+async function runCobalt(url, audioOnly, quality, filename) {
+  let resolved = null;
+  for (const ep of COBALT_ENDPOINTS) {
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 7000);
+      const res = await fetch(ep, {
+        method: 'POST', signal: ctrl.signal,
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          videoQuality: quality,
+          isAudioOnly: !!audioOnly,
+          filenamePattern: 'basic',
+          downloadMode: audioOnly ? 'audio' : 'auto',
+        }),
+      });
+      clearTimeout(to);
+      const data = await res.json().catch(() => null);
+      if (data && (data.status === 'stream' || data.status === 'redirect' ||
+                   data.status === 'tunnel' || data.status === 'success') && data.url) {
+        resolved = data.url;
+        logLine('c-tag', `[cobalt] gateway ${ep.replace('https://','').split('/')[0]} → status: ${esc(data.status)}`);
+        break;
+      } else if (data && data.status === 'error') {
+        logLine('c-warn', `[cobalt] ${esc((data.error && data.error.code) || data.text || 'error')}`);
+      }
+    } catch (e) { /* try next endpoint */ }
+  }
+  simulateProgress({ name: filename, saveUrl: resolved });
+}
+
+function simulateProgress({ name, saveUrl, bulk, count }) {
+  const totalMiB = bulk ? (count * (40 + Math.random()*120)) : (18 + Math.random() * 90);
+  S.prog.total = totalMiB.toFixed(2) + ' MiB';
+  let pct = 0;
+  let dest = name || S.prog.filename;
+  logLine('c-tag', `[info] Downloading 1 format(s): ${S.wizard.audioOnly ? '251 (audio)' : '137+140'}`);
+  logLine('c-dl', `[download] Destination: ${esc(dest)}`);
+  render();
+
+  let lastLog = 0;
+  S.prog.timer = setInterval(() => {
+    const step = 0.6 + Math.random() * 2.6;
+    pct = Math.min(100, pct + step);
+    S.prog.pct = pct;
+    const speed = (0.7 + Math.random() * 2.8);
+    S.prog.speed = speed.toFixed(2) + ' MiB/s';
+    S.prog.downloaded = (totalMiB * pct/100).toFixed(2) + ' MiB';
+    const remain = (totalMiB * (100-pct)/100) / speed;
+    S.prog.eta = pct >= 100 ? '00:00' : `00:${pad(Math.max(0, Math.round(remain)))}`;
+
+    if (pct - lastLog >= 8 || pct >= 100) {
+      lastLog = pct;
+      logLine('c-dl', `[download] <span class="n">${pct.toFixed(1)}%</span> of ${totalMiB.toFixed(2)}MiB at ${S.prog.speed} ETA ${S.prog.eta}`);
+    }
+
+    if (pct >= 100) {
+      clearInterval(S.prog.timer); S.prog.timer = null;
+      finishDownload({ dest, saveUrl, bulk, count, totalMiB });
+    }
+    render();
+  }, 130);
+}
+
+function finishDownload({ dest, saveUrl, bulk, count, totalMiB }) {
+  S.prog.done = true;
+  S.prog.speed = '—'; S.prog.eta = '00:00';
+  logLine('c-dl', `[download] 100% of ${totalMiB.toFixed(2)}MiB in 00:${pad(Math.round(10+Math.random()*40))}`);
+
+  if (bulk) {
+    logLine('c-ok', `[ok] Batch complete — ${count} file(s) written to ${esc(S.config.path)}`);
+    const now = nowStamp();
+    S.bulk.items.filter(x=>x.selected).forEach(it => {
+      S.history.unshift({ fn: it.title, type: S.settings.format, size: it.size, date: now });
+    });
+  } else {
+    if (!S.wizard.audioOnly) logLine('c-tag', `[Merger] Merging formats into "${esc(dest)}"`);
+    logLine('c-ok', `[ok] Download complete: ${esc(dest)}`);
+    if (saveUrl) {
+      S.prog.saveUrl = saveUrl;
+      logLine('c-ok', `[cobalt] Direct media URL resolved — SAVE button is live.`);
+    } else {
+      logLine('c-dim', `[i] No client-side URL (gateway offline) — in a real run the file is on disk.`);
+    }
+    S.history.unshift({ fn: dest.replace(/\.[^.]+$/,''), type: (dest.split('.').pop()||'mp4').toUpperCase(),
+      size: totalMiB.toFixed(1) + ' MiB', date: nowStamp() });
+  }
+  S.history = S.history.slice(0, 40);
+  saveStore('history', S.history);
+  setStatus('stable', 'STABLE');
+  chime2();
+  render();
+}
+function nowStamp() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+function triggerSave() {
+  if (!S.prog.saveUrl) return;
+  const a = document.createElement('a');
+  a.href = S.prog.saveUrl; a.setAttribute('download', ''); a.target = '_blank'; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('Opening native save dialog…', 'info');
+}
+function cancelDownload() {
+  if (S.prog.timer) { clearInterval(S.prog.timer); S.prog.timer = null; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   WINDOW CONTROLS — traffic lights
+   ═══════════════════════════════════════════════════════════════════════ */
+function terminateSession() {
+  cancelDownload();
+  S.terminated = true;
+  setStatus('err', 'HALTED');
+  go('terminated');
+}
+function restartSession() {
+  S.terminated = false;
+  setStatus('stable', 'STABLE');
+  chime2();
+  go('launcher');
+}
+$('#tl-close').onclick = () => {
+  if (S.terminated) restartSession(); else terminateSession();
+};
+$('#tl-minimize').onclick = () => {
+  S.minimized = !S.minimized;
+  $('#term').classList.toggle('minimized', S.minimized);
+  chime();
+};
+$('#tl-maximize').onclick = () => {
+  S.fullscreen = !S.fullscreen;
+  $('#term').classList.toggle('fullscreen', S.fullscreen);
+  document.body.classList.toggle('fullscreen', S.fullscreen);
+  chime();
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GLOBAL KEYBOARD LISTENER
+   ═══════════════════════════════════════════════════════════════════════ */
+document.addEventListener('keydown', e => {
+  if (S.modal) return;                 // modal handles its own keys
+  if (S.minimized && e.key !== 'Escape') return;
+
+  const def = SCREENS[S.screen];
+
+  switch (e.key) {
+    case 'ArrowDown': case 'j':
+      e.preventDefault(); move(1); return;
+    case 'ArrowUp': case 'k':
+      e.preventDefault(); move(-1); return;
+    case 'ArrowRight': case 'l':
+      if (def.onRight) { e.preventDefault(); def.onRight(S.sel); } return;
+    case 'ArrowLeft': case 'h':
+      if (S.screen === 'download_history' && e.key === 'h') break; // let 'h' shortcut through
+      if (def.onLeft)  { e.preventDefault(); def.onLeft(S.sel); return; }
+      break;
+    case 'Enter':
+      e.preventDefault();
+      if (def.onEnter) def.onEnter(S.sel);
+      return;
+    case ' ': case 'Spacebar':
+      if (def.onSpace) { e.preventDefault(); def.onSpace(S.sel); return; }
+      break;
+    case 'Escape':
+      e.preventDefault();
+      if (S.minimized) { S.minimized = false; $('#term').classList.remove('minimized'); return; }
+      if (S.screen === 'progress') cancelDownload();
+      if (S.screen !== 'launcher' && S.screen !== 'terminated') { chime(); go('launcher'); }
+      return;
+  }
+
+  // screen-specific single-key shortcuts
+  const k = e.key.toLowerCase();
+  if (S.screen === 'launcher' && (k === 'q')) { e.preventDefault(); terminateSession(); }
+  else if (S.screen === 'search_results' && (k === '/' || e.key === '/')) { e.preventDefault(); promptSearch(); }
+  else if (S.screen === 'bulk_selector' && k === 'c') { e.preventDefault(); go('download_config'); }
+  else if (S.screen === 'progress' && k === 'h' && S.prog.done) { e.preventDefault(); go('download_history'); }
+  else if (S.screen === 'terminated' && e.key === 'Enter') { restartSession(); }
+}, true);
+
+// resume audio context on first interaction (autoplay policy)
+document.addEventListener('pointerdown', () => {
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}, { once: false });
+
+/* ═══════════════ BOOT ═══════════════ */
+render();
+setStatus('stable', 'STABLE');
+</script>
+</body>
+</html>
