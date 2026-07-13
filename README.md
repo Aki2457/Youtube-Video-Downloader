@@ -12,6 +12,8 @@ yt <command> [subcommand] [options] [arguments]
 
 ## Features
 
+- **Interactive wizard** (`yt interactive`) — guided bulk-download session with
+  arrow-key navigation, Markdown result tables, and `[ ]` / `[X]` checkboxes
 - **Download** videos, Shorts, playlists, and channels with live progress bars
 - **Batch queue** persisted in `~/.yt/` — add now, download later, export as ZIP
 - **Search** videos and channels straight from the terminal (`--json` for scripts)
@@ -45,6 +47,60 @@ Prefer not to install? Run it in place: `python -m yt <command> ...`
 > back to the best single-file format and tells you once.
 
 ## Usage
+
+### Interactive Wizard
+
+```bash
+yt interactive            # guided bulk-download wizard
+yt gui                    # alias for 'yt interactive'
+yt interactive --run      # queue AND download immediately (no prompt)
+yt interactive --no-run   # queue items only, skip the download prompt
+yt interactive --quality worst --output ~/Videos
+```
+
+The wizard guides you through a **3-step flow** entirely in the terminal:
+
+**Step 1 — Choose an input type** from an arrow-key menu:
+
+```
+  ▶ [ ] YouTube Channel  (URL)
+    [ ] YouTube Channel  (Search)
+    [X] YouTube Video    (Search)
+    [ ] YouTube Playlist (URL)
+    [ ] YouTube Playlist (Search)
+    [ ] YouTube Short    (URL)
+    [ ] YouTube Short    (Search)
+```
+
+**Step 2 — Enter a URL or search query.**
+
+**Step 3 (search modes) — Browse results in a Markdown table, then pick with checkboxes:**
+
+```
+| # | Title                  | Channel      | Duration | Views | URL                  |
+|---|------------------------|--------------|----------|-------|----------------------|
+|  1 | Lofi Hip Hop Radio    | ChilledCow   | —        | 200M  | https://yt.com/…     |
+|  2 | Lofi Girl Playlist    | Lofi Girl    | —        | 50M   | https://yt.com/…     |
+
+  ▶ [X]  1. Lofi Hip Hop Radio          ChilledCow            —
+    [ ]  2. Lofi Girl Playlist           Lofi Girl             —
+```
+
+Selected items are added to the **batch queue** and you are asked whether to
+start downloading immediately.
+
+Supported input types:
+
+| Type                     | What you provide       |
+|--------------------------|------------------------|
+| YouTube Channel  (URL)   | Channel URL            |
+| YouTube Channel  (Search)| Search query → pick    |
+| YouTube Video    (URL)   | Video URL              |
+| YouTube Video    (Search)| Search query → pick    |
+| YouTube Playlist (URL)   | Playlist URL           |
+| YouTube Playlist (Search)| Search query → pick    |
+| YouTube Short    (URL)   | Short URL              |
+| YouTube Short    (Search)| Search query → pick    |
 
 ### Download
 
@@ -113,16 +169,18 @@ yt info <url> --json                    # raw yt-dlp metadata
 
 ```
 yt/
-├── main.py        # entry point + first-run dependency bootstrap
-├── cli.py         # argument parsing + command routing
-├── downloader.py  # yt-dlp subprocess wrapper + live progress
-├── resolver.py    # URL normalization + fallback resolution
-├── search.py      # video/channel search (yt-dlp backend)
-├── batch.py       # persistent queue, history, ZIP export
-├── ui.py          # shared Rich theme, tables, panels, progress
-├── logger.py      # strict-format logging
-├── utils.py       # shared helpers
-└── config.py      # paths, constants, defaults
+├── main.py         # entry point + first-run dependency bootstrap
+├── cli.py          # argument parsing + command routing
+├── interactive.py  # guided bulk-download wizard (yt interactive / yt gui)
+├── tui.py          # arrow-key checkbox menu + Markdown table renderer
+├── downloader.py   # yt-dlp subprocess wrapper + live progress
+├── resolver.py     # URL normalization + fallback resolution
+├── search.py       # video/channel search (yt-dlp backend)
+├── batch.py        # persistent queue, history, ZIP export
+├── ui.py           # shared Rich theme, tables, panels, progress
+├── logger.py       # strict-format logging
+├── utils.py        # shared helpers
+└── config.py       # paths, constants, defaults
 ```
 
 ## Development

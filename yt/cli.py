@@ -2,10 +2,11 @@
 
 The parser tree mirrors the public interface:
 
-    yt download <url...> [--quality ...] [--format ID] [--output DIR]
-    yt batch    add | run | list | clear | export
-    yt search   video | channel | add
-    yt info     <url>
+    yt download     <url...> [--quality ...] [--format ID] [--output DIR]
+    yt batch        add | run | list | clear | export
+    yt search       video | channel | add
+    yt info         <url>
+    yt interactive  (guided bulk-download wizard — also: yt gui)
 
 Handlers import the heavy modules lazily so `yt --help` stays instant.
 """
@@ -25,6 +26,7 @@ class CommandError(Exception):
 
 _EXAMPLES = """\
 examples:
+  yt interactive                               # guided bulk-download wizard
   yt download https://youtu.be/dQw4w9WgXcQ
   yt download <url> --quality worst --output ~/Videos
   yt download <url> --format 137+140
@@ -205,6 +207,47 @@ def build_parser() -> argparse.ArgumentParser:
     info.add_argument("url", metavar="URL")
     info.add_argument("--json", action="store_true", help="Emit raw metadata as JSON")
     info.set_defaults(handler=_cmd_info)
+
+    # -- interactive / gui -------------------------------------------------------
+    _interactive_desc = (
+        "Launch the interactive guided bulk-download wizard.\n\n"
+        "The wizard walks you through:\n"
+        "  1. Choosing an input type (channel, video, playlist, or short — URL or search)\n"
+        "  2. Entering a query or URL\n"
+        "  3. Browsing search results in a Markdown table\n"
+        "  4. Picking items with arrow-key checkboxes ([ ] / [X])\n"
+        "  5. Queueing selected items and optionally downloading immediately\n\n"
+        "Also available as: yt gui"
+    )
+    for _alias in ("interactive", "gui"):
+        _p = commands.add_parser(
+            _alias,
+            help=(
+                "Guided bulk-download wizard (arrow-key picker)"
+                if _alias == "interactive"
+                else "Alias for 'interactive'"
+            ),
+            description=_interactive_desc,
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+        _add_download_options(_p)
+        _p.add_argument(
+            "--audio-only", action="store_true", help="Download audio-only when running the queue"
+        )
+        _p.add_argument(
+            "--run",
+            action="store_true",
+            dest="auto_run",
+            default=None,
+            help="Start downloading immediately after queueing (skip the confirmation prompt)",
+        )
+        _p.add_argument(
+            "--no-run",
+            action="store_false",
+            dest="auto_run",
+            help="Queue items but do NOT download — skip the confirmation prompt",
+        )
+        _p.set_defaults(handler=_cmd_interactive)
 
     return parser
 
@@ -438,6 +481,17 @@ def _cmd_search_add(args) -> int:
     queue.add_videos(picked)
     logger.info(f"Queue size: {len(queue.items)} item(s)")
     return 0
+
+
+def _cmd_interactive(args) -> int:
+    from yt.interactive import run_interactive
+
+    return run_interactive(
+        quality=args.quality,
+        output=args.output,
+        audio_only=args.audio_only,
+        auto_run=args.auto_run,
+    )
 
 
 def _cmd_info(args) -> int:
